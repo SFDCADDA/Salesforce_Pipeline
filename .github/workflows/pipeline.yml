@@ -1,0 +1,115 @@
+# ================================================================
+# Salesforce Delta Deployment Pipeline
+# 
+# FLOW:
+# 1. Developer creates PR → Validation runs automatically
+# 2. Validation passes → Reviewer approves PR manually
+# 3. PR merged → Actual deployment runs automatically
+#
+# BRANCH → ORG MAPPING:
+# develop → DEV Sandbox    (NoTestRun)
+# sit     → SIT Sandbox    (RunLocalTests)
+# uat     → UAT Sandbox    (RunLocalTests)
+# main    → PRODUCTION     (RunAllTestsInOrg)
+# ================================================================
+
+name: Salesforce Delta Pipeline
+
+on:
+
+    # ── Triggers when PR is MERGED into these branches ──────────
+  # This is what actually DEPLOYS code to Salesforce
+  push:
+    branches:
+      - develop
+      - sit
+      - uat
+      - main
+
+    # ── Triggers when PR is CREATED targeting these branches ─────
+  # This only VALIDATES code — does not deploy anything
+  pull_request:
+    branches:
+      - develop
+      - sit
+      - uat
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+            # ── Step 1: Checkout full git history ─────────────────────
+      # fetch-depth: 0 is CRITICAL for sfdx-git-delta
+      # Without this, delta comparison will not work!
+      - name: Checkout Full Git History
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+            # ── Step 2: Install Salesforce CLI ────────────────────────
+      # Fresh Linux machine has nothing installed
+      # Must install SF CLI every pipeline run
+      - name: Install Salesforce CLI
+        run: |
+          npm install --global @salesforce/cli
+          sf --version
+
+            # ── Step 3: Install sfdx-git-delta plugin ─────────────────
+      # echo y = automatically answers yes to any prompts
+      - name: Install sfdx-git-delta
+        run: echo y | sf plugins install sfdx-git-delta
+
+            # ── Step 4: Set environment variables based on branch ─────
+      # github.ref_name  = branch name for PUSH events (PR merged)
+      # github.base_ref  = target branch for PULL REQUEST events
+      # Sets 3 variables:
+      #   AUTH_URL   = which Salesforce org to connect to
+      #   TEST_LEVEL = how many Apex tests to run
+      #   ENV_NAME   = environment name for display in logs
+      # $GITHUB_ENV is a SPECIAL FILE that GitHub Actions uses to share variables between steps!
+
+      - name: Set Environment Variables by Branch
+        run: |
+          if [ "${{ github.ref_name }}" == "develop" ] || \
+             [ "${{ github.base_ref }}" == "develop" ]; then
+            echo "AUTH_URL=$${{ secrets.SALESFORCE_AUTH_URL_DEV }}"  >> $$GITHUB_ENV
+            echo "TEST_LEVEL=NoTestRun"                             >> $GITHUB_ENV
+            echo "ENV_NAME=DEV"                                     >> $GITHUB_ENV
+
+          elif [ "${{ github.ref_name }}" == "sit" ] || \
+               [ "${{ github.base_ref }}" == "sit" ]; then
+            echo "AUTH_URL=$${{ secrets.SALESFORCE_AUTH_URL_SIT }}"  >> $$GITHUB_ENV
+            echo "TEST_LEVEL=RunLocalTests"                         >> $GITHUB_ENV
+            echo "ENV_NAME=SIT"                                     >> $GITHUB_ENV
+
+          elif [ "${{ github.ref_name }}" == "uat" ] || \
+               [ "${{ github.base_ref }}" == "uat" ]; then
+            echo "AUTH_URL=$${{ secrets.SALESFORCE_AUTH_URL_UAT }}"  >> $$GITHUB_ENV
+            echo "TEST_LEVEL=RunLocalTests"                         >> $GITHUB_ENV
+            echo "ENV_NAME=UAT"                                     >> $GITHUB_ENV
+
+          elif [ "${{ github.ref_name }}" == "main" ] || \
+               [ "${{ github.base_ref }}" == "main" ]; then
+            echo "AUTH_URL=$${{ secrets.SALESFORCE_AUTH_URL_PROD }}" >> $$GITHUB_ENV
+            echo "TEST_LEVEL=RunAllTestsInOrg"                      >> $GITHUB_ENV
+            echo "ENV_NAME=PROD"                                    >> $GITHUB_ENV
+          fi
+
+            # ── Step 5: Authenticate to Salesforce ────────────────────
+      # Writes auth url to temp file
+      # Logs into correct org using that file
+      # Deletes temp file immediately for security
+      - name: Authenticate to Salesforce (${{ env.ENV_NAME }})
+        run: |
+          echo "$AUTH_URL" > auth_url.txt
+          sf org login sfdx-url \
+            --sfdx-url-file auth_url.txt \
+            --alias target-org \
+            --set-default
+          rm auth_url.txt
+
+            # ── Step 6: Generate delta package ────────────────────────
+      # Comp
