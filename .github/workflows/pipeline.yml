@@ -121,13 +121,16 @@ jobs:
           fi
 
       - name: Deploy Destructive Changes
-        if: |
-          github.event_name == 'push' &&
-          hashFiles('delta/destructiveChanges/destructiveChanges.xml') != ''
+        if: github.event_name == 'push'
         run: |
-          sf project deploy start \
-            --manifest delta/destructiveChanges/package.xml \
-            --post-destructive-changes delta/destructiveChanges/destructiveChanges.xml \
-            --target-org target-org \
-            --test-level NoTestRun \
-            --wait 30
+          if [ -f "delta/destructiveChanges/destructiveChanges.xml" ] && \
+             grep -q '<types>' delta/destructiveChanges/destructiveChanges.xml; then
+            sf project deploy start \
+              --manifest delta/destructiveChanges/package.xml \
+              --post-destructive-changes delta/destructiveChanges/destructiveChanges.xml \
+              --target-org target-org \
+              --test-level NoTestRun \
+              --wait 30
+          else
+            echo "No destructive changes found. Skipping."
+          fi
