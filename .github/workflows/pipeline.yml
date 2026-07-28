@@ -97,20 +97,28 @@ jobs:
       - name: Validate Delta (${{ env.ENV_NAME }})
         if: github.event_name == 'pull_request'
         run: |
-          sf project deploy validate \
-            --manifest delta/package/package.xml \
-            --target-org target-org \
-            --test-level ${{ env.TEST_LEVEL }} \
-            --wait 60
+          if grep -q '<members>' delta/package/package.xml; then
+            sf project deploy validate \
+              --manifest delta/package/package.xml \
+              --target-org target-org \
+              --test-level ${{ env.TEST_LEVEL }} \
+              --wait 60
+          else
+            echo "No Salesforce metadata changes found. Skipping validation."
+          fi
 
       - name: Deploy Delta to ${{ env.ENV_NAME }}
         if: github.event_name == 'push'
         run: |
-          sf project deploy start \
-            --manifest delta/package/package.xml \
-            --target-org target-org \
-            --test-level ${{ env.TEST_LEVEL }} \
-            --wait 60
+          if grep -q '<members>' delta/package/package.xml; then
+            sf project deploy start \
+              --manifest delta/package/package.xml \
+              --target-org target-org \
+              --test-level ${{ env.TEST_LEVEL }} \
+              --wait 60
+          else
+            echo "No Salesforce metadata changes found. Skipping deployment."
+          fi
 
       - name: Deploy Destructive Changes
         if: |
