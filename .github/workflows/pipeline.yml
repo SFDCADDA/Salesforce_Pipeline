@@ -39,124 +39,124 @@ jobs:
 
     steps:
 
-            # ── Step 1: Checkout full git history ─────────────────────
-      # fetch-depth: 0 is CRITICAL for sfdx-git-delta
-      # Without full history delta comparison will not work!
-      - name: Checkout Full Git History
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+   # ── Step 1: Checkout full git history ─────────────────────
+  # fetch-depth: 0 is CRITICAL for sfdx-git-delta
+  # Without full history delta comparison will not work!
+  - name: Checkout Full Git History
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
 
-            # ── Step 2: Install Salesforce CLI ────────────────────────
-      # Fresh Linux machine — must install SF CLI every run
-      - name: Install Salesforce CLI
-        run: |
-          npm install --global @salesforce/cli
-          sf --version
+  # ── Step 2: Install Salesforce CLI ────────────────────────
+  # Fresh Linux machine — must install SF CLI every run
+  - name: Install Salesforce CLI
+    run: |
+      npm install --global @salesforce/cli
+      sf --version
 
-            # ── Step 3: Install sfdx-git-delta plugin ─────────────────
-      # echo y = auto answers yes to any install prompts
-      - name: Install sfdx-git-delta
-        run: echo y | sf plugins install sfdx-git-delta
+  # ── Step 3: Install sfdx-git-delta plugin ─────────────────
+  # echo y = auto answers yes to any install prompts
+  - name: Install sfdx-git-delta
+    run: echo y | sf plugins install sfdx-git-delta
 
-            # ── Step 4: Set environment variables based on branch ─────
-      # github.ref_name = branch name for PUSH events
-      # github.base_ref = target branch for PULL REQUEST events
-      # Sets 3 variables:
-      #   AUTH_URL   = which Salesforce org to connect to
-      #   TEST_LEVEL = how many Apex tests to run
-      #   ENV_NAME   = environment name for logs
-      - name: Set Environment Variables by Branch
-        run: |
-          if [ "${{ github.ref_name }}" == "develop" ] || \
-             [ "${{ github.base_ref }}" == "develop" ]; then
-            echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_DEV }}" >> $$GITHUB_ENV
-            echo "TEST_LEVEL=NoTestRun"                            >> $GITHUB_ENV
-            echo "ENV_NAME=DEV"                                    >> $GITHUB_ENV
+        # ── Step 4: Set environment variables based on branch ─────
+  # github.ref_name = branch name for PUSH events
+  # github.base_ref = target branch for PULL REQUEST events
+  # Sets 3 variables:
+  #   AUTH_URL   = which Salesforce org to connect to
+  #   TEST_LEVEL = how many Apex tests to run
+  #   ENV_NAME   = environment name for logs
+  - name: Set Environment Variables by Branch
+    run: |
+      if [ "${{ github.ref_name }}" == "develop" ] || \
+         [ "${{ github.base_ref }}" == "develop" ]; then
+        echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_DEV }}" >> $GITHUB_ENV
+        echo "TEST_LEVEL=NoTestRun"                            >> $GITHUB_ENV
+        echo "ENV_NAME=DEV"                                    >> $GITHUB_ENV
 
-          elif [ "${{ github.ref_name }}" == "sit" ] || \
-               [ "${{ github.base_ref }}" == "sit" ]; then
-            echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_SIT }}" >> $$GITHUB_ENV
-            echo "TEST_LEVEL=RunLocalTests"                        >> $GITHUB_ENV
-            echo "ENV_NAME=SIT"                                    >> $GITHUB_ENV
+      elif [ "${{ github.ref_name }}" == "sit" ] || \
+           [ "${{ github.base_ref }}" == "sit" ]; then
+        echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_SIT }}" >> $GITHUB_ENV
+        echo "TEST_LEVEL=RunLocalTests"                        >> $GITHUB_ENV
+        echo "ENV_NAME=SIT"                                    >> $GITHUB_ENV
 
-          elif [ "${{ github.ref_name }}" == "uat" ] || \
-               [ "${{ github.base_ref }}" == "uat" ]; then
-            echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_UAT }}" >> $$GITHUB_ENV
-            echo "TEST_LEVEL=RunLocalTests"                        >> $GITHUB_ENV
-            echo "ENV_NAME=UAT"                                    >> $GITHUB_ENV
+      elif [ "${{ github.ref_name }}" == "uat" ] || \
+           [ "${{ github.base_ref }}" == "uat" ]; then
+        echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_UAT }}" >> $GITHUB_ENV
+        echo "TEST_LEVEL=RunLocalTests"                        >> $GITHUB_ENV
+        echo "ENV_NAME=UAT"                                    >> $GITHUB_ENV
 
-          elif [ "${{ github.ref_name }}" == "main" ] || \
-               [ "${{ github.base_ref }}" == "main" ]; then
-            echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_PROD }}" >> $$GITHUB_ENV
-            echo "TEST_LEVEL=RunAllTestsInOrg"                      >> $GITHUB_ENV
-            echo "ENV_NAME=PROD"                                    >> $GITHUB_ENV
-          fi
+      elif [ "${{ github.ref_name }}" == "main" ] || \
+           [ "${{ github.base_ref }}" == "main" ]; then
+        echo "AUTH_URL=${{ secrets.SALESFORCE_AUTH_URL_PROD }}" >> $GITHUB_ENV
+        echo "TEST_LEVEL=RunAllTestsInOrg"                      >> $GITHUB_ENV
+        echo "ENV_NAME=PROD"                                    >> $GITHUB_ENV
+      fi
 
-            # ── Step 5: Authenticate to Salesforce ────────────────────
-      # Using --sfdx-url-stdin method (pipe auth url directly)
-      # This is more reliable than writing to a temp file
-      - name: Authenticate to Salesforce (${{ env.ENV_NAME }})
-        run: |
-          echo "${{ env.AUTH_URL }}" | sf org login sfdx-url \
-            --alias target-org \
-            --set-default \
-            --sfdx-url-stdin
+        # ── Step 5: Authenticate to Salesforce ────────────────────
+  # Using --sfdx-url-stdin method (pipe auth url directly)
+  # This is more reliable than writing to a temp file
+  - name: Authenticate to Salesforce (${{ env.ENV_NAME }})
+    run: |
+      echo "${{ env.AUTH_URL }}" | sf org login sfdx-url \
+        --alias target-org \
+        --set-default \
+        --sfdx-url-stdin
 
-            # ── Step 6: Generate delta package ────────────────────────
-      # Compares current commit (HEAD) vs previous (HEAD~1)
-      # Creates package.xml with ONLY changed components
-      # --generate-delta also copies changed files to delta folder
-      - name: Generate Delta Package
-        run: |
-          mkdir -p delta
-          sf sgd source delta \
-            --to HEAD \
-            --from HEAD~1 \
-            --output-dir delta \
-            --source-dir force-app \
-            --generate-delta
-          echo "====== Delta Components for ${{ env.ENV_NAME }} ======"
-          cat delta/package/package.xml
+        # ── Step 6: Generate delta package ────────────────────────
+  # Compares current commit (HEAD) vs previous (HEAD~1)
+  # Creates package.xml with ONLY changed components
+  # --generate-delta also copies changed files to delta folder
+  - name: Generate Delta Package
+    run: |
+      mkdir -p delta
+      sf sgd source delta \
+        --to HEAD \
+        --from HEAD~1 \
+        --output-dir delta \
+        --source-dir force-app \
+        --generate-delta
+      echo "====== Delta Components for ${{ env.ENV_NAME }} ======"
+      cat delta/package/package.xml
 
-            # ── Step 7: VALIDATION (runs on PR creation only) ─────────
-      # Checks code will deploy correctly WITHOUT saving to org
-      # If this fails PR cannot be merged ✅
-      - name: Validate Delta (${{ env.ENV_NAME }})
-        if: github.event_name == 'pull_request'
-        run: |
-          sf project deploy validate \
-            --manifest delta/package/package.xml \
-            --source-dir delta/force-app \
-            --target-org target-org \
-            --test-level ${{ env.TEST_LEVEL }} \
-            --wait 60
+        # ── Step 7: VALIDATION (runs on PR creation only) ─────────
+  # Checks code will deploy correctly WITHOUT saving to org
+  # If this fails PR cannot be merged ✅
+  - name: Validate Delta (${{ env.ENV_NAME }})
+    if: github.event_name == 'pull_request'
+    run: |
+      sf project deploy validate \
+        --manifest delta/package/package.xml \
+        --source-dir delta/force-app \
+        --target-org target-org \
+        --test-level ${{ env.TEST_LEVEL }} \
+        --wait 60
 
-            # ── Step 8: DEPLOYMENT (runs on PR merge only) ────────────
-      # Actually deploys changed components to Salesforce org
-      # Only runs when PR is merged (push event)
-      - name: Deploy Delta to ${{ env.ENV_NAME }}
-        if: github.event_name == 'push'
-        run: |
-          sf project deploy start \
-            --manifest delta/package/package.xml \
-            --source-dir delta/force-app \
-            --target-org target-org \
-            --test-level ${{ env.TEST_LEVEL }} \
-            --wait 60
+  # ── Step 8: DEPLOYMENT (runs on PR merge only) ────────────
+  # Actually deploys changed components to Salesforce org
+  # Only runs when PR is merged (push event)
+  - name: Deploy Delta to ${{ env.ENV_NAME }}
+    if: github.event_name == 'push'
+    run: |
+      sf project deploy start \
+        --manifest delta/package/package.xml \
+        --source-dir delta/force-app \
+        --target-org target-org \
+        --test-level ${{ env.TEST_LEVEL }} \
+        --wait 60
 
-            # ── Step 9: Deploy Destructive Changes ────────────────────
-      # Handles deleted components (runs on merge only)
-      # Only runs IF destructiveChanges.xml exists
-      # Skipped automatically if nothing was deleted
-      - name: Deploy Destructive Changes
-        if: |
-          github.event_name == 'push' &&
-          hashFiles('delta/destructiveChanges/destructiveChanges.xml') != ''
-        run: |
-          sf project deploy start \
-            --manifest delta/destructiveChanges/package.xml \
-            --post-destructive-changes delta/destructiveChanges/destructiveChanges.xml \
-            --target-org target-org \
-            --test-level NoTestRun \
-            --wait 30
+        # ── Step 9: Deploy Destructive Changes ────────────────────
+  # Handles deleted components (runs on merge only)
+  # Only runs IF destructiveChanges.xml exists
+  # Skipped automatically if nothing was deleted
+  - name: Deploy Destructive Changes
+    if: |
+      github.event_name == 'push' &&
+      hashFiles('delta/destructiveChanges/destructiveChanges.xml') != ''
+    run: |
+      sf project deploy start \
+        --manifest delta/destructiveChanges/package.xml \
+        --post-destructive-changes delta/destructiveChanges/destructiveChanges.xml \
+        --target-org target-org \
+        --test-level NoTestRun \
+        --wait 30
