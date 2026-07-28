@@ -98,10 +98,14 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           if grep -q '<members>' delta/package/package.xml; then
+            VALIDATE_TEST_LEVEL=${{ env.TEST_LEVEL }}
+            if [ "$VALIDATE_TEST_LEVEL" == "NoTestRun" ]; then
+              VALIDATE_TEST_LEVEL="RunLocalTests"
+            fi
             sf project deploy validate \
               --manifest delta/package/package.xml \
               --target-org target-org \
-              --test-level ${{ env.TEST_LEVEL }} \
+              --test-level $VALIDATE_TEST_LEVEL \
               --wait 60
           else
             echo "No Salesforce metadata changes found. Skipping validation."
