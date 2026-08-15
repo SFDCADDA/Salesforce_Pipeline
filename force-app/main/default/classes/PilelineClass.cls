@@ -1,4 +1,4 @@
-public class PilelineClass {
+public clss PilelineClass {
     // test delta deployment - feature branch
 
 }
